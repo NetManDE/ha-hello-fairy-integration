@@ -32,7 +32,7 @@ from homeassistant.util.color import (
     color_temperature_mired_to_kelvin as mired_to_kelvin,
 )
 
-from .const import DOMAIN
+from .const import DOMAIN, SCENES
 from .hello_fairy import BleakError, Lamp
 
 if TYPE_CHECKING:
@@ -45,7 +45,8 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     }
 )
 
-LIGHT_EFFECT_LIST = ["flow", "none"]
+# Build effect list from available scenes
+LIGHT_EFFECT_LIST = ["none"] + sorted(SCENES.keys())
 
 SUPPORT_FAIRY_LIGHT_BT = SUPPORT_BRIGHTNESS | SUPPORT_COLOR | SUPPORT_EFFECT
 
@@ -224,7 +225,18 @@ class HelloFairyBT(LightEntity):
             return
 
         if ATTR_EFFECT in kwargs:
-            self._effect = kwargs[ATTR_EFFECT]
+            effect_name = kwargs[ATTR_EFFECT]
+            self._effect = effect_name
+            _LOGGER.debug(f"Trying to set effect: {effect_name}")
+
+            # Handle scene effects
+            if effect_name != "none" and effect_name in SCENES:
+                scene_id = SCENES[effect_name]
+                _LOGGER.debug(f"Setting scene {effect_name} (ID: {scene_id}) with brightness: {brightness}")
+                await self._dev.set_scene(scene_id, brightness=brightness)
+                # Update state
+                self._brightness = brightness
+                return
 
     async def async_turn_off(self, **kwargs: int) -> None:
         """Turn the light off."""

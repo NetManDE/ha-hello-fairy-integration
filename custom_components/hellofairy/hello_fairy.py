@@ -14,15 +14,18 @@ from .const import (
     WRITE_CHAR_UUID,
     NOTIFY_CHAR_UUID,
     CMD_HEADER_A,
+    CMD_SET_LIGHT,
     CMD_DIY_CONTROL,
     CMD_PIXEL_DATA,
     CMD_DIY_SETTINGS,
+    LIGHT_MODE_SCENE,
     DIY_TYPE_STATIC,
     DIY_TYPE_SHOW_STATIC,
     DIY_TYPE_SAVE,
     CMD_DELAY_MS,
     PIXEL_CHUNK_SIZE,
     DEFAULT_PIXEL_COUNT,
+    SCENE_BRIGHTNESS_MAX,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -223,6 +226,26 @@ class Lamp:
         cmd.append(calculate_checksum(cmd))
         return bytes(cmd)
 
+    def _build_set_scene_cmd(self, scene_number: int, brightness: int = 2000) -> bytes:
+        """
+        Build scene mode command (0x03)
+        scene_number: Scene ID (1-50+)
+        brightness: Scene brightness (0-2550, default 2000)
+        """
+        # Clamp brightness to valid range
+        brightness = min(SCENE_BRIGHTNESS_MAX, max(0, int(brightness)))
+
+        cmd = bytearray([
+            CMD_HEADER_A,
+            CMD_SET_LIGHT,
+            LIGHT_MODE_SCENE,
+            scene_number & 0xFF,
+            (brightness >> 8) & 0xFF,  # brightness high byte
+            brightness & 0xFF,          # brightness low byte
+        ])
+        cmd.append(calculate_checksum(cmd))
+        return bytes(cmd)
+
     async def turn_on(self) -> None:
         """Turn the lamp on"""
         _LOGGER.debug("Send Cmd: Turn On")
@@ -305,6 +328,27 @@ class Lamp:
         _LOGGER.debug("Saving current state")
         cmd = self._build_diy_control_cmd(diy_type=DIY_TYPE_SAVE)
         await self.send_cmd(cmd)
+
+    async def set_scene(self, scene_number: int, brightness: int | None = None) -> None:
+        """
+        Set a built-in scene/effect
+        scene_number: Scene ID (1-50+, see SCENES dict in const.py)
+        brightness: Optional brightness override (0-255), maps to 0-2550 internally
+        """
+        if brightness is None:
+            # Use current brightness, scaled to scene range
+            scene_brightness = int((self._brightness / 255.0) * SCENE_BRIGHTNESS_MAX)
+        else:
+            # Map 0-255 to 0-2550
+            brightness = min(255, max(0, int(brightness)))
+            scene_brightness = int((brightness / 255.0) * SCENE_BRIGHTNESS_MAX)
+
+        _LOGGER.debug(f"Setting scene {scene_number} with brightness {scene_brightness}")
+        cmd = self._build_set_scene_cmd(scene_number, scene_brightness)
+        if await self.send_cmd(cmd):
+            self._is_on = True
+            if brightness is not None:
+                self._brightness = brightness
 
     async def read_services(self) -> None:
         """Read and log all BLE services (debug)"""

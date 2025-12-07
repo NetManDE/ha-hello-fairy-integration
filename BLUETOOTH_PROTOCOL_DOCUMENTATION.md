@@ -126,7 +126,109 @@ cmd = [0xAA, 0xD7, 0x01, 0x00]  # Frame 1, state=start
 cmd.append(calculate_checksum(cmd))
 ```
 
-### 4. Set DIY Settings (0x0E / 14)
+### 4. Set Light Mode (0x03 / 3)
+**Command Class:** `l2` (SetLightCmd)
+**Purpose:** Set device mode (HSV color, Scene, Music, or Warm White)
+
+**Structure:**
+```
+[0xAA] [0x03] [mode] [mode_specific_data...] [checksum]
+```
+
+**Mode 0: Warm White Mode**
+```
+[0xAA] [0x03] [0x00] [color_temp_high] [color_temp_low] [brightness_high] [brightness_low] [warm] [cool] [checksum]
+```
+
+**Mode 1: HSV Color Mode**
+```
+[0xAA] [0x03] [0x01] [hue_high] [hue_low] [saturation_high] [saturation_low] [value_high] [value_low] [checksum]
+```
+
+**Mode 2: Scene Mode** (Built-in Effects)
+```
+[0xAA] [0x03] [0x02] [scene_number] [brightness_high] [brightness_low] [checksum]
+```
+
+**Parameters (Scene Mode):**
+- `mode`: 0x02 for scene mode
+- `scene_number`: Scene ID (1-50+, see Scene List below)
+- `brightness`: Brightness level (0-65535, typically use 0-2550 range)
+  - `brightness_high`: (brightness >> 8) & 0xFF
+  - `brightness_low`: brightness & 0xFF
+
+**Mode 3: Music Mode**
+```
+[0xAA] [0x03] [0x03] [mode_and_auto] [sensitivity] [hue_high] [hue_low] [saturation_high] [saturation_low] [checksum]
+```
+
+**Example (Set to Scene 2 - Christmas Tree with brightness 200):**
+```python
+scene_number = 2
+brightness = 2000  # 0-2550 range
+cmd = [0xAA, 0x03, 0x02, scene_number]
+cmd.extend([(brightness >> 8) & 0xFF, brightness & 0xFF])
+cmd.append(calculate_checksum(cmd))
+# Result: [0xAA, 0x03, 0x02, 0x02, 0x07, 0xD0, checksum]
+```
+
+**Available Scene IDs:**
+
+**Basic Scenes:**
+- 1: Landscape Tree
+- 2: Christmas Tree
+- 3: Fence
+- 4: TV
+- 5: Photo Album
+- 6: Donut
+- 7: Hang
+- 8: Car
+- 9: House
+- 10: Car Inside
+- 11: Car Outside
+
+**Scene Categories:**
+- 14: Christmas scenes
+- 15: Halloween (Allhallows) scenes
+- 16: Easter scenes
+- 17: Valentine's scenes
+- 18: Thanksgiving scenes
+- 19: Four Leaf Clover scenes
+- 20: National Flag scenes
+- 21: Carnival scenes
+- 22: Ramadan scenes
+- 23: Parent scenes
+- 24: Animal scenes
+- 25: Science scenes
+- 26: Fireworks scenes
+- 27: Shop scenes
+- 28: Tree pattern scenes
+- 29: Picture scenes
+- 30: Tree top star scenes
+
+**Special Scenes:**
+- 31: DIY
+- 32: Compose GIF
+- 33: Timing
+- 34: Betty
+- 35: CN Inline Lamp PWM 027
+- 36: GIF DIY
+- 37: GIF Locality
+- 38: Picture Photograph
+- 39: Scene List
+- 40: Scene Loop List
+- 41: More
+- 42: MP4
+- 43: GIF
+- 44: Mural DIY
+- 45: Motor
+- 46: Half DIY Preinstall
+- 47: Developer DIY
+- 48: Map Storage Design
+- 49: MP4/GIF Matrix Scene
+- 50: Dynamic Layout
+
+### 5. Set DIY Settings (0x0E / 14)
 **Command Class:** `h2`
 **Purpose:** Configure DIY mode settings (brightness, speed, etc.)
 
@@ -148,7 +250,7 @@ cmd = [0xAA, 0x0E, 0x01, 0x01, 0x64, 0x80, 0x00, 0x01]  # brightness=128
 cmd.append(calculate_checksum(cmd))
 ```
 
-### 5. Music Mode (with brightness and HSV)
+### 6. Music Mode (with brightness and HSV)
 **Command Class:** `s1`
 **Purpose:** Control music-reactive mode
 

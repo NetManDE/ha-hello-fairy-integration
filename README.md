@@ -15,6 +15,7 @@ Home Assistant integration for Hello Fairy and CN Curtain Light Bluetooth LED de
 ✅ **Power Control** - Turn lights on/off
 ✅ **Brightness Control** - 0-255 brightness levels
 ✅ **RGB Color Control** - Full RGB color support
+✅ **Built-in Scene Effects** - 30+ pre-programmed effects (Christmas, Fireworks, Halloween, etc.)
 ✅ **Pixel Addressability** - Individual pixel control (256 or 900 pixels)
 ✅ **Local Bluetooth** - No cloud required
 ✅ **Fast Response** - Direct BLE communication
@@ -82,6 +83,58 @@ service: light.turn_off
 target:
   entity_id: light.curtain_light
 ```
+
+### Scene Effects
+
+The integration supports 30+ built-in scene effects from the original app:
+
+```yaml
+# Christmas Tree effect
+service: light.turn_on
+target:
+  entity_id: light.curtain_light
+data:
+  effect: christmas_tree
+  brightness: 255
+
+# Fireworks effect
+service: light.turn_on
+target:
+  entity_id: light.curtain_light
+data:
+  effect: fireworks
+  brightness: 200
+
+# Halloween effect
+service: light.turn_on
+target:
+  entity_id: light.curtain_light
+data:
+  effect: halloween
+  brightness: 255
+
+# Turn off effect (return to color mode)
+service: light.turn_on
+target:
+  entity_id: light.curtain_light
+data:
+  effect: none
+  rgb_color: [255, 255, 255]
+```
+
+**Available Effects:**
+- `christmas_tree`, `christmas` - Christmas themed patterns
+- `halloween` - Halloween themed patterns
+- `fireworks` - Fireworks animations
+- `easter` - Easter themed patterns
+- `valentines` - Valentine's Day patterns
+- `carnival` - Carnival/party patterns
+- `thanksgiving` - Thanksgiving patterns
+- `landscape_tree`, `fence`, `house` - Nature/building patterns
+- `car`, `tv`, `donut` - Object patterns
+- `animal` - Animal themed patterns
+- `science` - Science themed patterns
+- And many more! (See `SCENES` in `const.py` for full list)
 
 ### Automation Example
 
@@ -219,6 +272,7 @@ For issues, questions, or feature requests:
 - ✨ Complete protocol rewrite based on APK reverse engineering
 - ✨ Support for CN_The_Curtain_Light_BLE256 and BLE900 devices
 - ✨ Proper pixel addressing (256/900 addressable pixels)
+- ✨ **Built-in scene effects support** - 30+ pre-programmed effects (Christmas, Fireworks, Halloween, etc.)
 - ✨ Improved color and brightness control with proper scaling
 - ✨ Fixed Bluetooth command structure and checksums
 - ✨ Better error handling and logging

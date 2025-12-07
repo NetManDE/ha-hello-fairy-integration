@@ -17,10 +17,17 @@ CMD_HEADER_A = 0xAA  # -86 in signed byte
 CMD_HEADER_B = 0xBB  # -69 in signed byte
 
 # Command Types
+CMD_SET_LIGHT = 0x03     # 3: Set light mode (HSV, Scene, Music, Warm White)
 CMD_DIY_CONTROL = 0xD0  # -48: DIY picture control (direction, speed, type)
 CMD_PIXEL_DATA = 0xDA   # -38: Set pixel colors
 CMD_DYNAMIC_FRAME = 0xD7  # -41: Dynamic picture frame control
 CMD_DIY_SETTINGS = 0x0E  # 14: DIY settings (brightness, speed, mode)
+
+# Set Light Mode Types
+LIGHT_MODE_WARM_WHITE = 0
+LIGHT_MODE_HSV = 1
+LIGHT_MODE_SCENE = 2
+LIGHT_MODE_MUSIC = 3
 
 # DIY Control Types
 DIY_TYPE_STATIC = 0
@@ -43,3 +50,41 @@ DEFAULT_PIXEL_COUNT = PIXEL_COUNT_BLE256
 # Timing
 CMD_DELAY_MS = 50  # Delay between commands in milliseconds
 PIXEL_CHUNK_SIZE = 85  # Number of pixels to send per chunk
+
+# Built-in Scene IDs
+SCENES = {
+    # Basic Scenes
+    "landscape_tree": 1,
+    "christmas_tree": 2,
+    "fence": 3,
+    "tv": 4,
+    "photo_album": 5,
+    "donut": 6,
+    "hang": 7,
+    "car": 8,
+    "house": 9,
+    "car_inside": 10,
+    "car_outside": 11,
+
+    # Category Scenes (these are category IDs, actual scenes may vary)
+    "christmas": 14,
+    "halloween": 15,
+    "easter": 16,
+    "valentines": 17,
+    "thanksgiving": 18,
+    "four_leaf_clover": 19,
+    "national_flag": 20,
+    "carnival": 21,
+    "ramadan": 22,
+    "parent": 23,
+    "animal": 24,
+    "science": 25,
+    "fireworks": 26,
+    "shop": 27,
+    "tree_pattern": 28,
+    "picture": 29,
+    "tree_top_star": 30,
+}
+
+# Scene brightness range (0-2550, mapped to 0-255 internally)
+SCENE_BRIGHTNESS_MAX = 2550
