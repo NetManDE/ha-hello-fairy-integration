@@ -392,6 +392,48 @@ async def find_device_by_address(
     return await BleakScanner.find_device_by_address(address.upper(), timeout=timeout)
 
 
+async def discover_hello_fairy_lamps(scanner, timeout: float = 10.0) -> list[dict]:
+    """
+    Discover Hello Fairy / CN Curtain Light devices
+    Returns list of dicts with 'ble_device' key
+    """
+    from bleak import BleakScanner
+
+    _LOGGER.debug("Scanning for Hello Fairy / CN Curtain Light devices...")
+
+    # Device name prefixes to look for
+    device_prefixes = ["CN_The_Curtain_Light", "Hello Fairy", "BMSL"]
+
+    discovered_lamps = []
+
+    try:
+        # Use the provided scanner or create a new one
+        if hasattr(scanner, 'discovered_devices'):
+            # HA scanner - use discovered devices
+            devices = scanner.discovered_devices
+            _LOGGER.debug(f"Using HA scanner, found {len(devices)} devices")
+        else:
+            # Bleak scanner - perform scan
+            _LOGGER.debug("Using Bleak scanner for discovery")
+            devices = await BleakScanner.discover(timeout=timeout)
+
+        # Filter for Hello Fairy devices
+        for device in devices:
+            if device.name:
+                for prefix in device_prefixes:
+                    if device.name.startswith(prefix):
+                        _LOGGER.debug(f"Found Hello Fairy device: {device.name} ({device.address})")
+                        discovered_lamps.append({"ble_device": device})
+                        break
+
+    except Exception as e:
+        _LOGGER.error(f"Error during device discovery: {e}")
+        raise BleakError(f"Device discovery failed: {e}")
+
+    _LOGGER.debug(f"Discovery complete, found {len(discovered_lamps)} Hello Fairy devices")
+    return discovered_lamps
+
+
 if __name__ == "__main__":
     import sys
 
