@@ -392,7 +392,9 @@ async def find_device_by_address(
     return await BleakScanner.find_device_by_address(address.upper(), timeout=timeout)
 
 
-async def discover_hello_fairy_lamps(scanner, timeout: float = 10.0) -> list[dict]:
+async def discover_hello_fairy_lamps(
+    scanner: type[BleakClient] | None = None, timeout: float = 10.0
+) -> list[dict]:
     """
     Discover Hello Fairy / CN Curtain Light devices
     Returns list of dicts with 'ble_device' key
@@ -407,30 +409,29 @@ async def discover_hello_fairy_lamps(scanner, timeout: float = 10.0) -> list[dic
     discovered_lamps = []
 
     try:
-        # Use the provided scanner or create a new one
-        if hasattr(scanner, 'discovered_devices'):
-            # HA scanner - use discovered devices
-            devices = scanner.discovered_devices
-            _LOGGER.debug(f"Using HA scanner, found {len(devices)} devices")
-        else:
-            # Bleak scanner - perform scan
-            _LOGGER.debug("Using Bleak scanner for discovery")
-            devices = await BleakScanner.discover(timeout=timeout)
+        # Use the provided scanner class or default to BleakScanner
+        scanner_class = scanner if scanner is not None else BleakScanner
+        _LOGGER.debug(f"Using scanner: {scanner_class}")
+
+        # Perform the scan
+        devices = await scanner_class.discover(timeout=timeout)
+        _LOGGER.debug(f"Found {len(devices)} total Bluetooth devices")
 
         # Filter for Hello Fairy devices
         for device in devices:
+            _LOGGER.debug(f"Checking device: {device.name} ({device.address})")
             if device.name:
                 for prefix in device_prefixes:
                     if device.name.startswith(prefix):
-                        _LOGGER.debug(f"Found Hello Fairy device: {device.name} ({device.address})")
+                        _LOGGER.info(f"Found Hello Fairy device: {device.name} ({device.address})")
                         discovered_lamps.append({"ble_device": device})
                         break
 
     except Exception as e:
-        _LOGGER.error(f"Error during device discovery: {e}")
+        _LOGGER.error(f"Error during device discovery: {e}", exc_info=True)
         raise BleakError(f"Device discovery failed: {e}")
 
-    _LOGGER.debug(f"Discovery complete, found {len(discovered_lamps)} Hello Fairy devices")
+    _LOGGER.info(f"Discovery complete, found {len(discovered_lamps)} Hello Fairy devices")
     return discovered_lamps
 
 
