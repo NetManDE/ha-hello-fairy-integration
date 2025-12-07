@@ -2,16 +2,30 @@
 import asyncio
 import enum
 import logging
-import struct
-from typing import Any, Callable, cast
+from typing import Any, Callable
 
 # 3rd party imports
-from bleak import BleakClient, BleakError, BleakScanner
+from bleak import BleakClient, BleakError
 from bleak.backends.client import BaseBleakClient
 from bleak.backends.device import BLEDevice
 from bleak_retry_connector import establish_connection
 
-CONTROL_UUID = "49535343-8841-43f4-a8d4-ecbe34729bb3"
+from .const import (
+    WRITE_CHAR_UUID,
+    NOTIFY_CHAR_UUID,
+    CMD_HEADER_A,
+    CMD_DIY_CONTROL,
+    CMD_PIXEL_DATA,
+    CMD_DIY_SETTINGS,
+    DIY_TYPE_STATIC,
+    DIY_TYPE_SHOW_STATIC,
+    DIY_TYPE_SAVE,
+    CMD_DELAY_MS,
+    PIXEL_CHUNK_SIZE,
+    DEFAULT_PIXEL_COUNT,
+)
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class Conn(enum.Enum):
@@ -21,37 +35,41 @@ class Conn(enum.Enum):
     PAIRED = 4
 
 
-_LOGGER = logging.getLogger(__name__)
+def calculate_checksum(data: bytes) -> int:
+    """Calculate checksum for command packet (sum all bytes mod 256)"""
+    return sum(data) % 256
+
 
 class Lamp:
-    """The class that represents a Hello Fairy lamp
-    A Lamp object describe a real world Hello Fairy lamp.
-    """
+    """The class that represents a Hello Fairy / CN Curtain Light lamp"""
 
-    def __init__(self, ble_device: BLEDevice):
+    def __init__(self, ble_device: BLEDevice, pixel_count: int = DEFAULT_PIXEL_COUNT):
         self._client: BleakClient | None = None
         self._ble_device = ble_device
         self._mac = self._ble_device.address
+        self._pixel_count = pixel_count
+
         _LOGGER.debug(
-            f"Initializing Hello Fairy Lamp {self._ble_device.name} ({self._mac})"
+            f"Initializing LED Curtain Light {self._ble_device.name} ({self._mac}) "
+            f"with {pixel_count} pixels"
         )
         _LOGGER.debug(f"BLE_device details: {self._ble_device.details}")
+
         self._is_on = False
-        self._rgb = (0, 0, 0)
-        self._brightness = 0
+        self._rgb = (255, 255, 255)  # Default white
+        self._brightness = 255  # 0-255
         self.versions: str | None = None
 
-        # store func to call on state received:
+        # Store func to call on state received:
         self._state_callbacks: list[Callable[[], None]] = []
         self._conn = Conn.DISCONNECTED
         self._pair_resp_event = asyncio.Event()
         self._read_service = False
-        self._is_client_bluez = True
 
     def __str__(self) -> str:
         """The string representation"""
         str_rgb = f"rgb_{self._rgb} "
-        str_bri = f"bri_{self._brightness} " if self._mode else ""
+        str_bri = f"bri_{self._brightness} "
         str_rep = (
             f"<Lamp {self._mac} "
             f"{'ON' if self._is_on else 'OFF'} "
@@ -61,9 +79,7 @@ class Lamp:
         return str_rep
 
     def add_callback_on_state_changed(self, func: Callable[[], None]) -> None:
-        """
-        Register callbacks to be called when lamp state is received or bt disconnected
-        """
+        """Register callbacks to be called when lamp state is received or bt disconnected"""
         self._state_callbacks.append(func)
 
     def run_state_changed_cb(self) -> None:
@@ -73,27 +89,21 @@ class Lamp:
 
     def diconnected_cb(self, client: BaseBleakClient) -> None:
         _LOGGER.debug(f"Disconnected CB from client {client}")
-        # ensure we are responding to the newest client:
-        # if client != self._client:
-        #     return
-        self._mode = None  # lamp not available
         self._conn = Conn.DISCONNECTED
         self.run_state_changed_cb()
 
     async def connect(self, num_tries: int = 3) -> None:
-        if (
-            self._client and not self._client.is_connected
-        ):  # check the connection has not dropped
+        if self._client and not self._client.is_connected:
             await self.disconnect()
         if self._conn == Conn.PAIRING or self._conn == Conn.PAIRED:
-            # We do not try to reconnect if we are disconnected or unpaired
             return
+
         _LOGGER.debug("Initiating new connection")
         try:
             if self._client:
                 await self.disconnect()
 
-            _LOGGER.debug(f"Connecting now to {self._ble_device}:...")
+            _LOGGER.debug(f"Connecting now to {self._ble_device}...")
             self._client = await establish_connection(
                 BleakClient,
                 device=self._ble_device,
@@ -101,62 +111,43 @@ class Lamp:
                 disconnected_callback=self.diconnected_cb,
                 max_attempts=4,
             )
-            _LOGGER.debug(
-                f"Client used is: {self._client}. Backend is {self._client._backend}"
-            )
-            self._is_client_bluez = (
-                str(type(self._client._backend))
-                == "<class 'bleak.backends.bluezdbus.client.BleakClientBlueZDBus'>"
-            )
-            self._conn = Conn.UNPAIRED
             _LOGGER.debug(f"Connected: {self._client.is_connected}")
+            self._conn = Conn.UNPAIRED
 
-            # read services if in debug mode:
+            # Read services if in debug mode:
             if not self._read_service and _LOGGER.isEnabledFor(logging.DEBUG):
                 await self.read_services()
                 self._read_service = True
                 await asyncio.sleep(0.2)
 
-            # It may be that on bluez the notification request is not sent properly
-            # Not sure on esp... so only applyt to bluez
-            _LOGGER.debug("Request Pairing")
-            await self.pair()
-            # since we have no feedback
-            # we wait longer on first connection in case need to push button...
-            await asyncio.sleep(0.3)
-            # now we are assuming that we paired successfully
-            self._conn = Conn.PAIRED
-            # ensure we get state straight away after connection
-            await self.get_state()
-            # advertise to HA lamp is now available:
-            self.run_state_changed_cb()
+            # Enable notifications
+            _LOGGER.debug("Enabling notifications")
+            await self._client.start_notify(NOTIFY_CHAR_UUID, self._notification_handler)
+            await asyncio.sleep(0.1)
 
+            self._conn = Conn.PAIRED
             _LOGGER.debug(f"Connection status: {self._conn}")
+
+            # Advertise to HA lamp is now available:
+            self.run_state_changed_cb()
 
         except asyncio.TimeoutError:
             _LOGGER.error("Connection Timeout error")
         except BleakError as err:
             _LOGGER.error(f"Connection: BleakError: {err}")
 
-    async def pair(self) -> None:
-        """Send pairing command directly"""
-        # bits = bytearray(struct.pack("BBB15x", COMMAND_STX, CMD_PAIR, CMD_PAIR_ON))
-        if self._conn != Conn.UNPAIRED or self._client is None:
-            _LOGGER.error("Pairing: Cannot request pair as not connected")
-            return
-        try:
-            # Send pairing event
-            # await self._client.write_gatt_char(CONTROL_UUID, bits)
-            pass
-        except asyncio.TimeoutError:
-            _LOGGER.error("Pairing: Timeout error")
-        except BleakError as err:
-            _LOGGER.error(f"Pairing: BleakError: {err}")
+    def _notification_handler(self, sender: int, data: bytearray) -> None:
+        """Handle notifications from the device"""
+        _LOGGER.debug(f"Notification from {sender}: {data.hex()}")
+        # Parse notification data if needed for state updates
+        # The app receives state updates here, but for simplicity we'll track state locally
 
     async def disconnect(self) -> None:
         if self._client is None:
             return
         try:
+            if self._client.is_connected:
+                await self._client.stop_notify(NOTIFY_CHAR_UUID)
             await self._client.disconnect()
         except asyncio.TimeoutError:
             _LOGGER.error("Disconnection: Timeout error")
@@ -184,17 +175,23 @@ class Lamp:
     def color(self) -> tuple[int, int, int]:
         return self._rgb
 
+    @property
+    def pixel_count(self) -> int:
+        return self._pixel_count
+
     def get_prop_min_max(self) -> dict[str, Any]:
         return {
-            "brightness": {"min": 0, "max": 100},
+            "brightness": {"min": 0, "max": 255},
             "color": {"min": 0, "max": 255},
         }
 
-    async def send_cmd(self, bits: bytes, wait_notif: float = 0.5) -> bool:
+    async def send_cmd(self, cmd_bytes: bytes, wait_notif: float = 0.05) -> bool:
+        """Send command to the device"""
         await self.connect()
         if self._conn == Conn.PAIRED and self._client is not None:
             try:
-                await self._client.write_gatt_char(CONTROL_UUID, bytearray(bits))
+                _LOGGER.debug(f"Sending command: {cmd_bytes.hex()}")
+                await self._client.write_gatt_char(WRITE_CHAR_UUID, bytearray(cmd_bytes))
                 await asyncio.sleep(wait_notif)
                 return True
             except asyncio.TimeoutError:
@@ -203,53 +200,114 @@ class Lamp:
                 _LOGGER.error(f"Send Cmd: BleakError: {err}")
         return False
 
-    async def get_state(self) -> None:
-        """Request the state of the lamp (send back state through notif)"""
-        # bits = struct.pack("BBB15x", COMMAND_STX, CMD_GETSTATE, CMD_GETSTATE_SEC)
-        # _LOGGER.debug("Send Cmd: Get_state")
-        # await self.send_cmd(bits)
+    def _build_diy_control_cmd(self, direction: int = 0, speed: int = 100, diy_type: int = DIY_TYPE_STATIC) -> bytes:
+        """Build DIY control command (0xD0)"""
+        cmd = bytearray([CMD_HEADER_A, CMD_DIY_CONTROL, direction, speed, 0, diy_type])
+        cmd.append(calculate_checksum(cmd))
+        return bytes(cmd)
+
+    def _build_pixel_data_cmd(self, frame: int, pixels: list[tuple[int, int, int, int]]) -> bytes:
+        """
+        Build pixel data command (0xDA)
+        pixels: list of (pixel_index, r, g, b) tuples
+        """
+        cmd = bytearray([CMD_HEADER_A, CMD_PIXEL_DATA, frame])
+
+        for pixel_index, r, g, b in pixels:
+            # Add pixel index (little-endian, 2 bytes)
+            cmd.append(pixel_index & 0xFF)
+            cmd.append((pixel_index >> 8) & 0xFF)
+            # Add RGB color
+            cmd.extend([r, g, b])
+
+        cmd.append(calculate_checksum(cmd))
+        return bytes(cmd)
 
     async def turn_on(self) -> None:
-        """Turn the lamp on. (send back state through notif)"""
-        bits = bytes.fromhex("aa020101bb")
+        """Turn the lamp on"""
         _LOGGER.debug("Send Cmd: Turn On")
-        await self.send_cmd(bits)
+        # Set to static DIY mode
+        cmd = self._build_diy_control_cmd(diy_type=DIY_TYPE_SHOW_STATIC)
+        if await self.send_cmd(cmd):
+            self._is_on = True
+            # Set current color
+            await self.set_color(*self._rgb, self._brightness)
 
     async def turn_off(self) -> None:
-        """Turn the lamp off. (send back state through notif)"""
-        bits = bytes.fromhex("aa020100bb")
+        """Turn the lamp off"""
         _LOGGER.debug("Send Cmd: Turn Off")
-        await self.send_cmd(bits)
+        # Set all pixels to black
+        await self.set_all_pixels_color(0, 0, 0)
+        self._is_on = False
 
-    # set_brightness/temperature/color do NOT send a notification back.
-    # However, the lamp takes time to transition to new state
-    # and if another command (including get_state) is sent during that time,
-    # it stops the transition where it is...
     async def set_brightness(self, brightness: int) -> None:
-        """Set the brightness [1-100] (no notif)"""
-        brightness = min(100, max(0, int(brightness)))
+        """Set the brightness [0-255]"""
+        brightness = min(255, max(0, int(brightness)))
         _LOGGER.debug(f"Set_brightness {brightness}")
-        bits = bytes.fromhex("aa030701001403e8038cbb")
-        _LOGGER.debug("Send Cmd: Brightness")
-        if await self.send_cmd(bits, wait_notif=0):
-            self._brightness = brightness
 
-    async def set_color(
-        self, red: int, green: int, blue: int, brightness: int | None = None
-    ) -> None:
-        """Set the color of the lamp [0-255] (no notif)"""
+        self._brightness = brightness
+        # Re-apply current color with new brightness
+        if self._is_on:
+            await self.set_color(*self._rgb, brightness)
+
+    async def set_color(self, red: int, green: int, blue: int, brightness: int | None = None) -> None:
+        """Set the color of the lamp [0-255]"""
         if brightness is None:
             brightness = self._brightness
-        _LOGGER.debug(f"Set_color {(red, green, blue)}, {brightness}")
-        bits = bytes.fromhex(
-            "aa030701001403e8038cbb"
-        )
-        _LOGGER.debug("Send Cmd: Color")
-        if await self.send_cmd(bits, wait_notif=0):
-            self._rgb = (red, green, blue)
-            self._brightness = brightness
+
+        _LOGGER.debug(f"Set_color RGB({red}, {green}, {blue}), brightness={brightness}")
+
+        # Apply brightness scaling to RGB values
+        scale = brightness / 255.0
+        r = int(red * scale)
+        g = int(green * scale)
+        b = int(blue * scale)
+
+        self._rgb = (red, green, blue)
+        self._brightness = brightness
+
+        # Set all pixels to this color
+        await self.set_all_pixels_color(r, g, b)
+
+    async def set_all_pixels_color(self, r: int, g: int, b: int) -> None:
+        """Set all pixels to the same color"""
+        _LOGGER.debug(f"Setting all {self._pixel_count} pixels to RGB({r}, {g}, {b})")
+
+        # First set to static mode
+        cmd = self._build_diy_control_cmd(diy_type=DIY_TYPE_SHOW_STATIC)
+        await self.send_cmd(cmd)
+        await asyncio.sleep(0.05)
+
+        frame = 1
+        # Send pixels in chunks to avoid MTU issues
+        for start_idx in range(0, self._pixel_count, PIXEL_CHUNK_SIZE):
+            end_idx = min(start_idx + PIXEL_CHUNK_SIZE, self._pixel_count)
+
+            # Build list of (pixel_index, r, g, b) tuples
+            pixels = [(idx, r, g, b) for idx in range(start_idx, end_idx)]
+
+            cmd = self._build_pixel_data_cmd(frame, pixels)
+            await self.send_cmd(cmd, wait_notif=CMD_DELAY_MS / 1000.0)
+
+    async def set_pixel_color(self, pixel_index: int, r: int, g: int, b: int) -> None:
+        """Set a single pixel color"""
+        if pixel_index >= self._pixel_count:
+            _LOGGER.warning(f"Pixel index {pixel_index} out of range (max {self._pixel_count})")
+            return
+
+        frame = 1
+        pixels = [(pixel_index, r, g, b)]
+        cmd = self._build_pixel_data_cmd(frame, pixels)
+        await self.send_cmd(cmd)
+
+    async def save_current_state(self) -> None:
+        """Save the current DIY state to device memory"""
+        _LOGGER.debug("Saving current state")
+        cmd = self._build_diy_control_cmd(diy_type=DIY_TYPE_SAVE)
+        await self.send_cmd(cmd)
 
     async def read_services(self) -> None:
+        """Read and log all BLE services (debug)"""
         if self._client is None:
             return
         for service in self._client.services:
@@ -259,17 +317,17 @@ class Lamp:
                     try:
                         value = bytes(await self._client.read_gatt_char(char.uuid))
                         _LOGGER.info(
-                            f"__[Characteristic] {char} ({','.join(char.properties)}), Value: {str(value)}"
+                            f"  [Characteristic] {char} ({','.join(char.properties)}), "
+                            f"Value: {value.hex()}"
                         )
                     except Exception as e:
                         _LOGGER.error(
-                            f"__[Characteristic] {char} ({','.join(char.properties)}), Value: {e}"
+                            f"  [Characteristic] {char} ({','.join(char.properties)}), "
+                            f"Value: {e}"
                         )
-
                 else:
-                    value = None
                     _LOGGER.info(
-                        f"__[Characteristic] {char} ({','.join(char.properties)}), Value: {value}"
+                        f"  [Characteristic] {char} ({','.join(char.properties)})"
                     )
 
                 for descriptor in char.descriptors:
@@ -277,11 +335,9 @@ class Lamp:
                         value = bytes(
                             await self._client.read_gatt_descriptor(descriptor.handle)
                         )
-                        _LOGGER.info(
-                            f"____[Descriptor] {descriptor}) | Value: {str(value)}"
-                        )
+                        _LOGGER.info(f"    [Descriptor] {descriptor} | Value: {value.hex()}")
                     except Exception as e:
-                        _LOGGER.error(f"____[Descriptor] {descriptor}) | Value: {e}")
+                        _LOGGER.error(f"    [Descriptor] {descriptor} | Value: {e}")
 
 
 async def find_device_by_address(
@@ -292,75 +348,51 @@ async def find_device_by_address(
     return await BleakScanner.find_device_by_address(address.upper(), timeout=timeout)
 
 
-async def discover_hello_fairy_lamps(
-    scanner: type[BleakScanner] | None = None,
-) -> list[dict[str, Any]]:
-    """Scanning feature
-    Scan the BLE neighborhood for an Yeelight lamp
-    This method requires the script to be launched as root
-    Returns the list of nearby lamps
-    """
-    lamp_list = []
-    scanner = scanner if scanner is not None else BleakScanner
-
-    devices = await scanner.discover()
-    for d in devices:
-        lamp_list.append({"ble_device": d})
-        _LOGGER.info(f"found {d.name} with mac: {d.address}, details:{d.details}")
-    return lamp_list
-
-
 if __name__ == "__main__":
-
     import sys
 
-    # bleak backends are very loud, this reduces the log spam when using --debug
+    # Bleak backends are very loud, this reduces the log spam when using --debug
     logging.getLogger("bleak.backends").setLevel(logging.WARNING)
-    # start the logger to stdout
+    # Start the logger to stdout
     logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
-    _LOGGER.info("HELLO_FAIRY_BT scanning starts")
-
-    # start discovery:
-    # lamp_list = asyncio.run(discover_yeelight_lamps())
-    # _LOGGER.info("YEELIGHT_BT scanning ends")
-    # from bleak import BleakScanner
-    # device = asyncio.run( BleakScanner.find_device_by_address("F8:24:41:E6:3E:39", timeout=20.0))
-    # print("DEVICE:")
-    # print(device)
-    # print("DEVICE END")
-    # lamp_list = [device]
-
-    # # now try to connect to the lamp
-    # if not lamp_list:
-    #     exit
+    _LOGGER.info("LED Curtain Light BT scanning starts")
 
     async def test_light() -> None:
-
-        device = await find_device_by_address("F8:24:41:E6:3E:39")
+        # Replace with your device MAC address
+        device = await find_device_by_address("AA:BB:CC:DD:EE:FF")
         if device is None:
             print("No device found")
             return
-        lamp_list = [{"ble_device": device}]
 
-        lamp = Lamp(cast(BLEDevice, lamp_list[0]["ble_device"]))
+        lamp = Lamp(device, pixel_count=256)
         await lamp.connect()
-        await asyncio.sleep(2.0)
-        await lamp.turn_on()
-        await asyncio.sleep(2.0)
-        await lamp.turn_off()
-        await asyncio.sleep(2.0)
-        await lamp.turn_on()
-        await asyncio.sleep(2.0)
-        await lamp.set_brightness(20)
         await asyncio.sleep(1.0)
-        await lamp.set_brightness(70)
+
+        # Turn on with white
+        await lamp.turn_on()
         await asyncio.sleep(2.0)
-        await lamp.set_color(red=100, green=250, blue=50)
+
+        # Change to red
+        await lamp.set_color(red=255, green=0, blue=0)
         await asyncio.sleep(2.0)
+
+        # Change to green
+        await lamp.set_color(red=0, green=255, blue=0)
+        await asyncio.sleep(2.0)
+
+        # Change to blue
+        await lamp.set_color(red=0, green=0, blue=255)
+        await asyncio.sleep(2.0)
+
+        # Dim to 50%
+        await lamp.set_brightness(128)
+        await asyncio.sleep(2.0)
+
+        # Turn off
         await lamp.turn_off()
-        await asyncio.sleep(2.0)
+        await asyncio.sleep(1.0)
+
         await lamp.disconnect()
-        await asyncio.sleep(2.0)
 
     asyncio.run(test_light())
-    print("The end")
+    print("Test completed")

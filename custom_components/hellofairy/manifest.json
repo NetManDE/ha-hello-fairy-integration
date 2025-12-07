@@ -1,21 +1,25 @@
 {
   "domain": "hellofairy",
-  "name": "Hello Fairy",
+  "name": "Hello Fairy LED Curtain Light",
   "bluetooth": [
+    {
+      "connectable": true,
+      "local_name": "CN_The_Curtain_Light*"
+    },
     {
       "connectable": true,
       "local_name": "Hello Fairy-*"
     }
   ],
-  "version": "1.0.0",
-  "codeowners": ["@Alwinator"],
+  "version": "2.0.0",
+  "codeowners": ["@NetManDE"],
   "config_flow": true,
-  "integration_type": "service",
+  "integration_type": "device",
   "dependencies": ["bluetooth"],
-  "documentation": "https://github.com/Alwinator/ha-hello-fairy-integration",
-  "issue_tracker": "https://github.com/Alwinator/ha-hello-fairy-integration/issues",
+  "documentation": "https://github.com/NetManDE/ha-hello-fairy-integration",
+  "issue_tracker": "https://github.com/NetManDE/ha-hello-fairy-integration/issues",
   "homekit": {},
-  "iot_class": "assumed_state",
+  "iot_class": "local_push",
   "requirements": ["bleak>=0.18.0", "bleak-retry-connector>=2.1.3"],
   "ssdp": [],
   "zeroconf": []

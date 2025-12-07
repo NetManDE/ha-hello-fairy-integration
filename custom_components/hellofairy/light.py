@@ -187,7 +187,7 @@ class HelloFairyBT(LightEntity):
 
     async def async_turn_on(self, **kwargs: int) -> None:
         """Turn the light on."""
-        _LOGGER.debug(f"Trying to turn on. with ATTR:{kwargs}")
+        _LOGGER.debug(f"Trying to turn on with ATTR: {kwargs}")
 
         # First if brightness of dev to 0: turn off
         if ATTR_BRIGHTNESS in kwargs:
@@ -198,30 +198,29 @@ class HelloFairyBT(LightEntity):
                 return
         else:
             brightness = self._brightness
-        brightness_dev = int(round(brightness * 1.0 / 255 * 100))
 
         # ATTR cannot be set while light is off, so turn it on first
         if not self._is_on:
             await self._dev.turn_on()
-        self._is_on = True
+            self._is_on = True
 
         if ATTR_HS_COLOR in kwargs:
             rgb: tuple[int, int, int] = color_hs_to_RGB(*kwargs.get(ATTR_HS_COLOR))
             self._rgb = rgb
             _LOGGER.debug(
-                f"Trying to set color RGB:{rgb} with brighntess:{brightness_dev}"
+                f"Trying to set color RGB: {rgb} with brightness: {brightness}"
             )
-            await self._dev.set_color(*rgb, brightness=brightness_dev)
-            # assuming new state before lamp update comes through:
-            self._brightness = brightness_dev
-            await asyncio.sleep(0.7)  # give time to transition before HA request update
+            await self._dev.set_color(*rgb, brightness=brightness)
+            # Update state
+            self._brightness = brightness
+            await asyncio.sleep(0.5)  # Give time to transition
             return
 
         if ATTR_BRIGHTNESS in kwargs:
-            _LOGGER.debug(f"Trying to set brightness: {brightness_dev}")
-            await self._dev.set_brightness(brightness_dev)
-            # assuming new state before lamp update comes through:
-            self._brightness = int(round(float(brightness_dev) * 2.55))
+            _LOGGER.debug(f"Trying to set brightness: {brightness}")
+            await self._dev.set_brightness(brightness)
+            # Update state
+            self._brightness = brightness
             return
 
         if ATTR_EFFECT in kwargs:
