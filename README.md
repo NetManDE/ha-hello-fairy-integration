@@ -268,7 +268,7 @@ For issues, questions, or feature requests:
 
 ## Changelog
 
-### Version 2.0.0 (2025-12-07)
+### Version 1.0.1-DEV-2 (2025-12-07)
 - ✨ Complete protocol rewrite based on APK reverse engineering
 - ✨ Support for CN_The_Curtain_Light_BLE256 and BLE900 devices
 - ✨ Proper pixel addressing (256/900 addressable pixels)
