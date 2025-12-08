@@ -87,6 +87,21 @@ class HelloFairyBT(LightEntity):
         self._prop_min_max = self._dev.get_prop_min_max()
         _LOGGER.debug(f"[LIGHT_INIT] Properties: {self._prop_min_max}")
 
+        # Register callback to update availability when connection state changes
+        self._dev.add_callback_on_state_changed(self._on_device_state_changed)
+        _LOGGER.debug("[LIGHT_INIT] Registered state change callback")
+
+    def _on_device_state_changed(self) -> None:
+        """Called when device connection state changes."""
+        new_available = self._dev.available
+        _LOGGER.info(f"[LIGHT_CALLBACK] Device state changed - available: {new_available}, conn: {self._dev._conn}")
+
+        if self._available != new_available:
+            _LOGGER.info(f"[LIGHT_CALLBACK] ⚡ Availability changing from {self._available} to {new_available}")
+            self._available = new_available
+            # Notify Home Assistant of the state change
+            self.async_write_ha_state()
+
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
         _LOGGER.info(f"[LIGHT_ADDED] Entity {self.name} ({self._mac}) added to Home Assistant")
@@ -95,18 +110,24 @@ class HelloFairyBT(LightEntity):
                 EVENT_HOMEASSISTANT_STOP, self.async_will_remove_from_hass
             )
         )
-        # schedule immediate refresh of lamp state:
-        _LOGGER.debug("[LIGHT_ADDED] Scheduling immediate state refresh")
-        self.async_schedule_update_ha_state(force_refresh=True)
+        # Don't force refresh on startup - stay optimistically available
+        _LOGGER.debug("[LIGHT_ADDED] Entity initialization complete, staying optimistically available")
 
-    async def async_will_remove_from_hass(self) -> None:
+    async def async_will_remove_from_hass(self, event=None) -> None:
         """Run when entity will be removed from hass."""
-        _LOGGER.debug("Running async_will_remove_from_hass")
+        _LOGGER.info(f"[LIGHT_REMOVE] Removing entity {self.name} from Home Assistant")
         try:
+            _LOGGER.debug("[LIGHT_REMOVE] Disconnecting from device...")
             await self._dev.disconnect()
-        except BleakError:
-            _LOGGER.debug(
-                f"Exception disconnecting from {self._dev._mac}", exc_info=True
+            _LOGGER.debug("[LIGHT_REMOVE] ✅ Successfully disconnected")
+        except BleakError as ex:
+            _LOGGER.warning(
+                f"[LIGHT_REMOVE] ⚠️ BleakError while disconnecting from {self._dev._mac}: {ex}"
+            )
+        except Exception as ex:
+            _LOGGER.error(
+                f"[LIGHT_REMOVE] ❌ Unexpected error disconnecting from {self._dev._mac}: {ex}",
+                exc_info=True
             )
 
     @property
@@ -190,20 +211,12 @@ class HelloFairyBT(LightEntity):
 
     async def async_update(self) -> None:
         # The lamp state is tracked locally in this entity
-        # Update availability based on connection status
+        # Availability is updated via callbacks from the device
         _LOGGER.debug(f"[LIGHT_UPDATE] Updating lamp state for {self.name}")
         _LOGGER.debug(f"[LIGHT_UPDATE] Device connection state: {self._dev._conn}")
-        _LOGGER.debug(f"[LIGHT_UPDATE] Device available property: {self._dev.available}")
-
-        old_available = self._available
-        self._available = self._dev.available
-
-        if old_available != self._available:
-            _LOGGER.info(f"[LIGHT_UPDATE] ⚡ Availability changed: {old_available} -> {self._available}")
-        else:
-            _LOGGER.debug(f"[LIGHT_UPDATE] Availability unchanged: {self._available}")
-
+        _LOGGER.debug(f"[LIGHT_UPDATE] Current availability: {self._available}")
         _LOGGER.debug(f"[LIGHT_UPDATE] Current state - is_on: {self._is_on}, brightness: {self._brightness}, rgb: {self._rgb}")
+        # Note: availability is now managed via device state callbacks, not here
 
     async def async_turn_on(self, **kwargs: int) -> None:
         """Turn the light on."""
