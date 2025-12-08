@@ -279,6 +279,25 @@ class Lamp:
         cmd.append(calculate_checksum(cmd))
         return bytes(cmd)
 
+    def _build_set_light_hsv_cmd(self, r: int, g: int, b: int, brightness: int = 255) -> bytes:
+        """
+        Build HSV color mode command (0x03)
+        This sets ALL pixels to the same color with a single command
+        r, g, b: 0-255
+        brightness: 0-255
+        """
+        cmd = bytearray([
+            CMD_HEADER_A,
+            CMD_SET_LIGHT,
+            LIGHT_MODE_HSV,
+            r & 0xFF,
+            g & 0xFF,
+            b & 0xFF,
+            brightness & 0xFF,
+        ])
+        cmd.append(calculate_checksum(cmd))
+        return bytes(cmd)
+
     def _build_set_scene_cmd(self, scene_number: int, brightness: int = 2000) -> bytes:
         """
         Build scene mode command (0x03)
@@ -312,8 +331,9 @@ class Lamp:
     async def turn_off(self) -> None:
         """Turn the lamp off"""
         _LOGGER.debug("Send Cmd: Turn Off")
-        # Set all pixels to black
-        await self.set_all_pixels_color(0, 0, 0)
+        # Set all pixels to black using efficient HSV command
+        cmd = self._build_set_light_hsv_cmd(0, 0, 0, 0)
+        await self.send_cmd(cmd)
         self._is_on = False
 
     async def set_brightness(self, brightness: int) -> None:
@@ -333,17 +353,12 @@ class Lamp:
 
         _LOGGER.debug(f"Set_color RGB({red}, {green}, {blue}), brightness={brightness}")
 
-        # Apply brightness scaling to RGB values
-        scale = brightness / 255.0
-        r = int(red * scale)
-        g = int(green * scale)
-        b = int(blue * scale)
-
         self._rgb = (red, green, blue)
         self._brightness = brightness
 
-        # Set all pixels to this color
-        await self.set_all_pixels_color(r, g, b)
+        # Use efficient HSV mode command to set all pixels at once
+        cmd = self._build_set_light_hsv_cmd(red, green, blue, brightness)
+        await self.send_cmd(cmd)
 
     async def set_all_pixels_color(self, r: int, g: int, b: int) -> None:
         """Set all pixels to the same color"""
