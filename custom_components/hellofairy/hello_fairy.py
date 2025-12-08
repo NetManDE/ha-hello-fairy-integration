@@ -192,15 +192,31 @@ class Lamp:
         """Send command to the device"""
         await self.connect()
         if self._conn == Conn.PAIRED and self._client is not None:
+            # Check if client is actually connected
+            if not self._client.is_connected:
+                _LOGGER.warning("Client not connected, attempting reconnection")
+                await self.disconnect()
+                await self.connect()
+                if not self._client or not self._client.is_connected:
+                    _LOGGER.error("Failed to reconnect to device")
+                    return False
+
             try:
                 _LOGGER.debug(f"Sending command: {cmd_bytes.hex()}")
                 await self._client.write_gatt_char(WRITE_CHAR_UUID, bytearray(cmd_bytes))
                 await asyncio.sleep(wait_notif)
                 return True
+            except AssertionError as err:
+                _LOGGER.error(f"Send Cmd: AssertionError (connection lost): {err}")
+                # Mark as disconnected and try to recover on next command
+                self._conn = Conn.DISCONNECTED
             except asyncio.TimeoutError:
                 _LOGGER.error("Send Cmd: Timeout error")
             except BleakError as err:
                 _LOGGER.error(f"Send Cmd: BleakError: {err}")
+                # Connection might be lost, mark as disconnected
+                if "Operation failed with ATT error" in str(err):
+                    self._conn = Conn.DISCONNECTED
         return False
 
     def _build_diy_control_cmd(self, direction: int = 0, speed: int = 100, diy_type: int = DIY_TYPE_STATIC) -> bytes:

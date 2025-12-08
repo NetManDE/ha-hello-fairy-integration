@@ -9,15 +9,13 @@ import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
-    ATTR_COLOR_TEMP,
     ATTR_HS_COLOR,
     ATTR_EFFECT,
     ENTITY_ID_FORMAT,
     PLATFORM_SCHEMA,
-    SUPPORT_BRIGHTNESS,
-    SUPPORT_COLOR,
-    SUPPORT_EFFECT,
     LightEntity,
+    LightEntityFeature,
+    ColorMode,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_MAC, CONF_NAME, EVENT_HOMEASSISTANT_STOP
@@ -47,8 +45,6 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
 
 # Build effect list from available scenes
 LIGHT_EFFECT_LIST = ["none"] + sorted(SCENES.keys())
-
-SUPPORT_FAIRY_LIGHT_BT = SUPPORT_BRIGHTNESS | SUPPORT_COLOR | SUPPORT_EFFECT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -172,19 +168,25 @@ class HelloFairyBT(LightEntity):
         return self._is_on
 
     @property
-    def supported_features(self) -> int:
+    def supported_color_modes(self) -> set[ColorMode]:
+        """Flag supported color modes."""
+        return {ColorMode.HS}
+
+    @property
+    def color_mode(self) -> ColorMode:
+        """Return the active color mode."""
+        return ColorMode.HS
+
+    @property
+    def supported_features(self) -> LightEntityFeature:
         """Flag supported features."""
-        return SUPPORT_FAIRY_LIGHT_BT
+        return LightEntityFeature.EFFECT
 
     async def async_update(self) -> None:
-        # Note, update should only start fetching,
-        # followed by asynchronous updates through notifications.
-        try:
-            _LOGGER.debug("Requesting an update of the lamp status")
-            await self._dev.get_state()
-        except Exception as ex:
-            _LOGGER.error(f"Fail requesting the light status. Got exception: {ex}")
-            _LOGGER.debug("Hello_Fairy_BT trace:", exc_info=True)
+        # The lamp state is tracked locally in this entity
+        # Update availability based on connection status
+        self._available = self._dev.available
+        _LOGGER.debug(f"Updated lamp availability: {self._available}")
 
     async def async_turn_on(self, **kwargs: int) -> None:
         """Turn the light on."""
