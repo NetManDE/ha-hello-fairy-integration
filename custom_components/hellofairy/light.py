@@ -233,13 +233,16 @@ class HelloFairyBT(LightEntity):
             brightness = self._brightness
             _LOGGER.debug(f"[LIGHT_ON] Using current brightness: {brightness}")
 
-        # ATTR cannot be set while light is off, so turn it on first
+        # Mark as on
         if not self._is_on:
-            _LOGGER.info("[LIGHT_ON] Light is off, turning on first")
-            await self._dev.turn_on()
             self._is_on = True
-            self.async_write_ha_state()  # Update Home Assistant
-            _LOGGER.debug("[LIGHT_ON] ✅ Light turned on")
+
+        # If no attributes provided, set default white color
+        if not kwargs:
+            _LOGGER.info("[LIGHT_ON] No attributes, setting default white")
+            await self._dev.set_color(*self._rgb, self._brightness)
+            self.async_write_ha_state()
+            return
 
         if ATTR_HS_COLOR in kwargs:
             rgb: tuple[int, int, int] = color_hs_to_RGB(*kwargs.get(ATTR_HS_COLOR))

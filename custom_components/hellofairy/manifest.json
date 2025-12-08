@@ -11,7 +11,7 @@
       "local_name": "Hello Fairy-*"
     }
   ],
-  "version": "1.0.4",
+  "version": "1.0.5",
   "codeowners": ["@NetManDE"],
   "config_flow": true,
   "integration_type": "device",
