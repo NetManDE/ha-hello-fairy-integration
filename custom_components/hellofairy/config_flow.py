@@ -10,8 +10,6 @@ from homeassistant.components.bluetooth import (
     BluetoothServiceInfoBleak,
     async_get_scanner,
 )
-from homeassistant.components.bluetooth import BluetoothScanningMode
-from homeassistant.components.bluetooth.scanner import create_bleak_scanner
 from homeassistant.const import CONF_MAC, CONF_NAME
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import device_registry as dr
@@ -74,16 +72,14 @@ class HelloFairy_btConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type
         errors = {}
         if user_input is None:
             return self.async_show_form(step_id="scan")
+        # Get the Home Assistant Bluetooth scanner
         scanner = async_get_scanner(self.hass)
-        _LOGGER.debug("Preparing for a scan")
-        # first we check if scanner from HA bluetooth is enabled
-        try:
-            if len(scanner.discovered_devices) >= 1:
-                # raises Attribute errors if bluetooth not configured
-                _LOGGER.debug(f"Using HA scanner {scanner}")
-        except AttributeError:
-            scanner = create_bleak_scanner(BluetoothScanningMode.ACTIVE, None)
-            _LOGGER.debug("Using bleak scanner through HA")
+        if scanner is None:
+            _LOGGER.error("Bluetooth not configured in Home Assistant")
+            errors["base"] = "bluetooth_not_configured"
+            return self.async_show_form(step_id="scan", errors=errors)
+
+        _LOGGER.debug(f"Using HA Bluetooth scanner: {scanner}")
         try:
             _LOGGER.debug("Starting a scan for Hello Fairy devices")
             ble_devices = await discover_hello_fairy_lamps(scanner)
