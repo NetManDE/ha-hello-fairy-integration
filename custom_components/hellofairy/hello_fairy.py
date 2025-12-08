@@ -320,14 +320,11 @@ class Lamp:
         return bytes(cmd)
 
     async def turn_on(self) -> None:
-        """Turn the lamp on"""
-        _LOGGER.debug("Send Cmd: Turn On")
-        # Set to static DIY mode
-        cmd = self._build_diy_control_cmd(diy_type=DIY_TYPE_SHOW_STATIC)
-        if await self.send_cmd(cmd):
-            self._is_on = True
-            # Set current color
-            await self.set_color(*self._rgb, self._brightness)
+        """Turn the lamp on - just enables it without changing color/effect"""
+        _LOGGER.debug("Send Cmd: Turn On (no color change)")
+        # Just mark as on - don't send any command
+        # This preserves any running animation or effect
+        self._is_on = True
 
     async def turn_off(self) -> None:
         """Turn the lamp off"""

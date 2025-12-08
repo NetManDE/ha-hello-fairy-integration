@@ -75,8 +75,8 @@ class HelloFairyBT(LightEntity):
         self._mac = ble_device.address
         self.entity_id = generate_entity_id(ENTITY_ID_FORMAT, self._name, [])
         self._is_on = False
-        self._rgb = (0, 0, 0)
-        self._brightness = 0
+        self._rgb = (255, 255, 255)  # Default to white
+        self._brightness = 255  # Default to full brightness
         self._effect_list = LIGHT_EFFECT_LIST
         self._effect = "none"
         self._available = True
@@ -238,6 +238,7 @@ class HelloFairyBT(LightEntity):
             _LOGGER.info("[LIGHT_ON] Light is off, turning on first")
             await self._dev.turn_on()
             self._is_on = True
+            self.async_write_ha_state()  # Update Home Assistant
             _LOGGER.debug("[LIGHT_ON] ✅ Light turned on")
 
         if ATTR_HS_COLOR in kwargs:
@@ -247,8 +248,8 @@ class HelloFairyBT(LightEntity):
             await self._dev.set_color(*rgb, brightness=brightness)
             # Update state
             self._brightness = brightness
+            self.async_write_ha_state()  # Update Home Assistant
             _LOGGER.debug("[LIGHT_ON] ✅ Color set successfully")
-            await asyncio.sleep(0.5)  # Give time to transition
             return
 
         if ATTR_BRIGHTNESS in kwargs:
@@ -256,6 +257,7 @@ class HelloFairyBT(LightEntity):
             await self._dev.set_brightness(brightness)
             # Update state
             self._brightness = brightness
+            self.async_write_ha_state()  # Update Home Assistant
             _LOGGER.debug("[LIGHT_ON] ✅ Brightness set successfully")
             return
 
@@ -271,6 +273,7 @@ class HelloFairyBT(LightEntity):
                 await self._dev.set_scene(scene_id, brightness=brightness)
                 # Update state
                 self._brightness = brightness
+                self.async_write_ha_state()  # Update Home Assistant
                 _LOGGER.debug("[LIGHT_ON] ✅ Effect set successfully")
                 return
 
@@ -280,4 +283,5 @@ class HelloFairyBT(LightEntity):
 
         await self._dev.turn_off()
         self._is_on = False
+        self.async_write_ha_state()  # Update Home Assistant
         _LOGGER.debug("[LIGHT_OFF] ✅ Light turned off")
