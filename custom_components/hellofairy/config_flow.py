@@ -11,7 +11,7 @@ from homeassistant.components.bluetooth import (
     async_get_scanner,
 )
 from homeassistant.components.bluetooth import BluetoothScanningMode
-from habluetooth.scanner import create_bleak_scanner
+from homeassistant.components.bluetooth.scanner import create_bleak_scanner
 from homeassistant.const import CONF_MAC, CONF_NAME
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import device_registry as dr
