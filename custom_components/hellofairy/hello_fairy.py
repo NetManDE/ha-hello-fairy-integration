@@ -329,9 +329,8 @@ class Lamp:
     async def turn_off(self) -> None:
         """Turn the lamp off"""
         _LOGGER.debug("Send Cmd: Turn Off")
-        # Set all pixels to black using efficient HSV command
-        cmd = self._build_set_light_hsv_cmd(0, 0, 0, 0)
-        await self.send_cmd(cmd)
+        # Set all pixels to black
+        await self.set_all_pixels_color(0, 0, 0)
         self._is_on = False
 
     async def set_brightness(self, brightness: int) -> None:
@@ -351,12 +350,17 @@ class Lamp:
 
         _LOGGER.debug(f"Set_color RGB({red}, {green}, {blue}), brightness={brightness}")
 
+        # Apply brightness scaling to RGB values
+        scale = brightness / 255.0
+        r = int(red * scale)
+        g = int(green * scale)
+        b = int(blue * scale)
+
         self._rgb = (red, green, blue)
         self._brightness = brightness
 
-        # Use efficient HSV mode command to set all pixels at once
-        cmd = self._build_set_light_hsv_cmd(red, green, blue, brightness)
-        await self.send_cmd(cmd)
+        # Use pixel-by-pixel update (HSV mode doesn't work correctly on BSL78A)
+        await self.set_all_pixels_color(r, g, b)
 
     async def set_all_pixels_color(self, r: int, g: int, b: int) -> None:
         """Set all pixels to the same color"""

@@ -48,8 +48,8 @@ PIXEL_COUNT_BLE900 = 900
 DEFAULT_PIXEL_COUNT = PIXEL_COUNT_BLE256
 
 # Timing
-CMD_DELAY_MS = 150  # Delay between commands in milliseconds (increased for device processing)
-PIXEL_CHUNK_SIZE = 15  # Number of pixels to send per chunk (reduced to fit BLE MTU safely ~80 bytes)
+CMD_DELAY_MS = 80  # Delay between commands in milliseconds (optimized for BSL78A)
+PIXEL_CHUNK_SIZE = 25  # Number of pixels to send per chunk (125 bytes fits BLE MTU safely)
 
 # Built-in Scene IDs
 SCENES = {
