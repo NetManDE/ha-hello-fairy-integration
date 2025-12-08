@@ -1,0 +1,23 @@
+2025-12-08 11:03:01.311 ERROR (MainThread) [homeassistant.core] Error running job: <Job onetime listen homeassistant_stop <bound method HelloFairyBT.async_will_remove_from_hass of <entity unknown.unknown=unknown>> HassJobType.Callback <_OneTimeListener custom_components.hellofairy.light:<bound method HelloFairyBT.async_will_remove_from_hass of <entity light.led_vorhang=unavailable>>>>
+Traceback (most recent call last):
+  File "/usr/src/homeassistant/homeassistant/core.py", line 1556, in async_fire_internal
+    self._hass.async_run_hass_job(job, event)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "/usr/src/homeassistant/homeassistant/core.py", line 918, in async_run_hass_job
+    hassjob.target(*args)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/usr/src/homeassistant/homeassistant/core.py", line 1417, in __call__
+    self.hass.async_run_hass_job(self.listener_job, event)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/src/homeassistant/homeassistant/core.py", line 921, in async_run_hass_job
+    return self._async_add_hass_job(hassjob, *args, background=background)
+           ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/src/homeassistant/homeassistant/core.py", line 737, in _async_add_hass_job
+    hassjob.target(*args), name=hassjob.name, loop=self.loop
+    ~~~~~~~~~~~~~~^^^^^^^
+TypeError: HelloFairyBT.async_will_remove_from_hass() takes 1 positional argument but 2 were given
+2025-12-08 11:05:01.519 INFO (MainThread) [homeassistant.components.light] Setting up hellofairy.light
+2025-12-08 11:05:01.520 INFO (MainThread) [custom_components.hellofairy.light] [LIGHT_INIT] Initializing Hello Fairy Entity: dsfdsf, BE:29:58:00:48:1E
+2025-12-08 11:05:01.522 INFO (MainThread) [homeassistant.helpers.entity_registry] Registered new light.hellofairy entity: light.led_vorhang
+2025-12-08 11:05:01.522 INFO (MainThread) [custom_components.hellofairy.light] [LIGHT_ADDED] Entity dsfdsf (BE:29:58:00:48:1E) added to Home Assistant
+2025-12-08 11:05:01.523 INFO (MainThread) [custom_components.hellofairy.light] [LIGHT_UPDATE] ⚡ Availability changed: True -> False
