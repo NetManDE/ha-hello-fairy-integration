@@ -49,7 +49,7 @@ DEFAULT_PIXEL_COUNT = PIXEL_COUNT_BLE256
 
 # Timing
 CMD_DELAY_MS = 50  # Delay between commands in milliseconds
-PIXEL_CHUNK_SIZE = 85  # Number of pixels to send per chunk
+PIXEL_CHUNK_SIZE = 30  # Number of pixels to send per chunk (reduced to fit BLE MTU ~180 bytes)
 
 # Built-in Scene IDs
 SCENES = {
