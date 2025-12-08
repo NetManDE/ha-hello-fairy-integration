@@ -96,17 +96,23 @@ class Lamp:
         self.run_state_changed_cb()
 
     async def connect(self, num_tries: int = 3) -> None:
+        _LOGGER.debug(f"[CONNECT] Current connection state: {self._conn}")
+        _LOGGER.debug(f"[CONNECT] Client exists: {self._client is not None}")
+
         if self._client and not self._client.is_connected:
+            _LOGGER.debug("[CONNECT] Client exists but not connected, disconnecting first")
             await self.disconnect()
         if self._conn == Conn.PAIRING or self._conn == Conn.PAIRED:
+            _LOGGER.debug(f"[CONNECT] Already in state {self._conn}, skipping connection")
             return
 
-        _LOGGER.debug("Initiating new connection")
+        _LOGGER.info(f"[CONNECT] Initiating new connection to {self._mac}")
         try:
             if self._client:
+                _LOGGER.debug("[CONNECT] Cleaning up existing client")
                 await self.disconnect()
 
-            _LOGGER.debug(f"Connecting now to {self._ble_device}...")
+            _LOGGER.info(f"[CONNECT] Connecting to BLE device: {self._ble_device.name} ({self._ble_device.address})...")
             self._client = await establish_connection(
                 BleakClient,
                 device=self._ble_device,
@@ -114,30 +120,37 @@ class Lamp:
                 disconnected_callback=self.diconnected_cb,
                 max_attempts=4,
             )
-            _LOGGER.debug(f"Connected: {self._client.is_connected}")
+            _LOGGER.info(f"[CONNECT] Connection established: {self._client.is_connected}")
             self._conn = Conn.UNPAIRED
 
             # Read services if in debug mode:
             if not self._read_service and _LOGGER.isEnabledFor(logging.DEBUG):
+                _LOGGER.debug("[CONNECT] Reading BLE services...")
                 await self.read_services()
                 self._read_service = True
                 await asyncio.sleep(0.2)
 
             # Enable notifications
-            _LOGGER.debug("Enabling notifications")
+            _LOGGER.info("[CONNECT] Enabling notifications...")
             await self._client.start_notify(NOTIFY_CHAR_UUID, self._notification_handler)
             await asyncio.sleep(0.1)
 
             self._conn = Conn.PAIRED
-            _LOGGER.debug(f"Connection status: {self._conn}")
+            _LOGGER.info(f"[CONNECT] ✅ Successfully paired! Connection status: {self._conn}")
 
             # Advertise to HA lamp is now available:
+            _LOGGER.debug("[CONNECT] Notifying Home Assistant of availability change")
             self.run_state_changed_cb()
 
         except asyncio.TimeoutError:
-            _LOGGER.error("Connection Timeout error")
+            _LOGGER.error("[CONNECT] ❌ Connection timeout error")
+            self._conn = Conn.DISCONNECTED
         except BleakError as err:
-            _LOGGER.error(f"Connection: BleakError: {err}")
+            _LOGGER.error(f"[CONNECT] ❌ BleakError during connection: {err}")
+            self._conn = Conn.DISCONNECTED
+        except Exception as err:
+            _LOGGER.error(f"[CONNECT] ❌ Unexpected error during connection: {err}", exc_info=True)
+            self._conn = Conn.DISCONNECTED
 
     def _notification_handler(self, sender: int, data: bytearray) -> None:
         """Handle notifications from the device"""
@@ -146,17 +159,26 @@ class Lamp:
         # The app receives state updates here, but for simplicity we'll track state locally
 
     async def disconnect(self) -> None:
+        _LOGGER.debug(f"[DISCONNECT] Disconnecting from {self._mac}")
         if self._client is None:
+            _LOGGER.debug("[DISCONNECT] No client to disconnect")
             return
         try:
             if self._client.is_connected:
+                _LOGGER.debug("[DISCONNECT] Stopping notifications...")
                 await self._client.stop_notify(NOTIFY_CHAR_UUID)
+            _LOGGER.debug("[DISCONNECT] Disconnecting client...")
             await self._client.disconnect()
+            _LOGGER.info("[DISCONNECT] ✅ Successfully disconnected")
         except asyncio.TimeoutError:
-            _LOGGER.error("Disconnection: Timeout error")
+            _LOGGER.error("[DISCONNECT] ❌ Timeout error during disconnect")
         except BleakError as err:
-            _LOGGER.error(f"Disconnection: BleakError: {err}")
-        self._conn = Conn.DISCONNECTED
+            _LOGGER.error(f"[DISCONNECT] ❌ BleakError during disconnect: {err}")
+        except Exception as err:
+            _LOGGER.error(f"[DISCONNECT] ❌ Unexpected error during disconnect: {err}", exc_info=True)
+        finally:
+            self._conn = Conn.DISCONNECTED
+            _LOGGER.debug(f"[DISCONNECT] Connection state set to: {self._conn}")
 
     @property
     def mac(self) -> str:
@@ -190,33 +212,48 @@ class Lamp:
 
     async def send_cmd(self, cmd_bytes: bytes, wait_notif: float = 0.05) -> bool:
         """Send command to the device"""
+        _LOGGER.debug(f"[SEND_CMD] Attempting to send command: {cmd_bytes.hex()}")
+        _LOGGER.debug(f"[SEND_CMD] Current connection state: {self._conn}")
+
         await self.connect()
+
         if self._conn == Conn.PAIRED and self._client is not None:
+            _LOGGER.debug(f"[SEND_CMD] Connection paired, client exists: {self._client is not None}")
+
             # Check if client is actually connected
             if not self._client.is_connected:
-                _LOGGER.warning("Client not connected, attempting reconnection")
+                _LOGGER.warning("[SEND_CMD] ⚠️ Client not connected, attempting reconnection")
                 await self.disconnect()
                 await self.connect()
                 if not self._client or not self._client.is_connected:
-                    _LOGGER.error("Failed to reconnect to device")
+                    _LOGGER.error("[SEND_CMD] ❌ Failed to reconnect to device")
                     return False
+                _LOGGER.info("[SEND_CMD] ✅ Successfully reconnected")
 
             try:
-                _LOGGER.debug(f"Sending command: {cmd_bytes.hex()}")
+                _LOGGER.info(f"[SEND_CMD] Sending command to {self._mac}: {cmd_bytes.hex()}")
                 await self._client.write_gatt_char(WRITE_CHAR_UUID, bytearray(cmd_bytes))
                 await asyncio.sleep(wait_notif)
+                _LOGGER.debug("[SEND_CMD] ✅ Command sent successfully")
                 return True
             except AssertionError as err:
-                _LOGGER.error(f"Send Cmd: AssertionError (connection lost): {err}")
+                _LOGGER.error(f"[SEND_CMD] ❌ AssertionError (connection lost): {err}", exc_info=True)
                 # Mark as disconnected and try to recover on next command
                 self._conn = Conn.DISCONNECTED
             except asyncio.TimeoutError:
-                _LOGGER.error("Send Cmd: Timeout error")
+                _LOGGER.error("[SEND_CMD] ❌ Timeout error while sending command")
             except BleakError as err:
-                _LOGGER.error(f"Send Cmd: BleakError: {err}")
+                _LOGGER.error(f"[SEND_CMD] ❌ BleakError: {err}")
                 # Connection might be lost, mark as disconnected
                 if "Operation failed with ATT error" in str(err):
+                    _LOGGER.warning("[SEND_CMD] ATT error detected, marking as disconnected")
                     self._conn = Conn.DISCONNECTED
+            except Exception as err:
+                _LOGGER.error(f"[SEND_CMD] ❌ Unexpected error: {err}", exc_info=True)
+                self._conn = Conn.DISCONNECTED
+        else:
+            _LOGGER.error(f"[SEND_CMD] ❌ Cannot send command - conn state: {self._conn}, client exists: {self._client is not None}")
+
         return False
 
     def _build_diy_control_cmd(self, direction: int = 0, speed: int = 100, diy_type: int = DIY_TYPE_STATIC) -> bytes:

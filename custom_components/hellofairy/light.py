@@ -81,18 +81,22 @@ class HelloFairyBT(LightEntity):
         self._effect = "none"
         self._available = True
 
-        _LOGGER.info(f"Initializing Hello Fairy Entity: {self.name}, {self._mac}")
+        _LOGGER.info(f"[LIGHT_INIT] Initializing Hello Fairy Entity: {self.name}, {self._mac}")
+        _LOGGER.debug(f"[LIGHT_INIT] BLE Device: {ble_device.name} ({ble_device.address})")
         self._dev = Lamp(ble_device)
         self._prop_min_max = self._dev.get_prop_min_max()
+        _LOGGER.debug(f"[LIGHT_INIT] Properties: {self._prop_min_max}")
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
+        _LOGGER.info(f"[LIGHT_ADDED] Entity {self.name} ({self._mac}) added to Home Assistant")
         self.async_on_remove(
             self.hass.bus.async_listen_once(
                 EVENT_HOMEASSISTANT_STOP, self.async_will_remove_from_hass
             )
         )
         # schedule immediate refresh of lamp state:
+        _LOGGER.debug("[LIGHT_ADDED] Scheduling immediate state refresh")
         self.async_schedule_update_ha_state(force_refresh=True)
 
     async def async_will_remove_from_hass(self) -> None:
@@ -127,6 +131,8 @@ class HelloFairyBT(LightEntity):
 
     @property
     def available(self) -> bool:
+        """Return True if entity is available."""
+        _LOGGER.debug(f"[LIGHT_AVAILABLE] Checking availability for {self.name}: {self._available}")
         return self._available
 
     @property
@@ -185,63 +191,80 @@ class HelloFairyBT(LightEntity):
     async def async_update(self) -> None:
         # The lamp state is tracked locally in this entity
         # Update availability based on connection status
+        _LOGGER.debug(f"[LIGHT_UPDATE] Updating lamp state for {self.name}")
+        _LOGGER.debug(f"[LIGHT_UPDATE] Device connection state: {self._dev._conn}")
+        _LOGGER.debug(f"[LIGHT_UPDATE] Device available property: {self._dev.available}")
+
+        old_available = self._available
         self._available = self._dev.available
-        _LOGGER.debug(f"Updated lamp availability: {self._available}")
+
+        if old_available != self._available:
+            _LOGGER.info(f"[LIGHT_UPDATE] ⚡ Availability changed: {old_available} -> {self._available}")
+        else:
+            _LOGGER.debug(f"[LIGHT_UPDATE] Availability unchanged: {self._available}")
+
+        _LOGGER.debug(f"[LIGHT_UPDATE] Current state - is_on: {self._is_on}, brightness: {self._brightness}, rgb: {self._rgb}")
 
     async def async_turn_on(self, **kwargs: int) -> None:
         """Turn the light on."""
-        _LOGGER.debug(f"Trying to turn on with ATTR: {kwargs}")
+        _LOGGER.info(f"[LIGHT_ON] 💡 Turning on {self.name} with attributes: {kwargs}")
 
         # First if brightness of dev to 0: turn off
         if ATTR_BRIGHTNESS in kwargs:
             brightness = kwargs[ATTR_BRIGHTNESS]
             if brightness == 0:
-                _LOGGER.debug("Lamp brightness to be set to 0... so turning off")
+                _LOGGER.debug("[LIGHT_ON] Brightness set to 0, turning off instead")
                 await self.async_turn_off()
                 return
         else:
             brightness = self._brightness
+            _LOGGER.debug(f"[LIGHT_ON] Using current brightness: {brightness}")
 
         # ATTR cannot be set while light is off, so turn it on first
         if not self._is_on:
+            _LOGGER.info("[LIGHT_ON] Light is off, turning on first")
             await self._dev.turn_on()
             self._is_on = True
+            _LOGGER.debug("[LIGHT_ON] ✅ Light turned on")
 
         if ATTR_HS_COLOR in kwargs:
             rgb: tuple[int, int, int] = color_hs_to_RGB(*kwargs.get(ATTR_HS_COLOR))
             self._rgb = rgb
-            _LOGGER.debug(
-                f"Trying to set color RGB: {rgb} with brightness: {brightness}"
-            )
+            _LOGGER.info(f"[LIGHT_ON] 🎨 Setting color RGB: {rgb} with brightness: {brightness}")
             await self._dev.set_color(*rgb, brightness=brightness)
             # Update state
             self._brightness = brightness
+            _LOGGER.debug("[LIGHT_ON] ✅ Color set successfully")
             await asyncio.sleep(0.5)  # Give time to transition
             return
 
         if ATTR_BRIGHTNESS in kwargs:
-            _LOGGER.debug(f"Trying to set brightness: {brightness}")
+            _LOGGER.info(f"[LIGHT_ON] 🔆 Setting brightness: {brightness}")
             await self._dev.set_brightness(brightness)
             # Update state
             self._brightness = brightness
+            _LOGGER.debug("[LIGHT_ON] ✅ Brightness set successfully")
             return
 
         if ATTR_EFFECT in kwargs:
             effect_name = kwargs[ATTR_EFFECT]
             self._effect = effect_name
-            _LOGGER.debug(f"Trying to set effect: {effect_name}")
+            _LOGGER.info(f"[LIGHT_ON] ✨ Setting effect: {effect_name}")
 
             # Handle scene effects
             if effect_name != "none" and effect_name in SCENES:
                 scene_id = SCENES[effect_name]
-                _LOGGER.debug(f"Setting scene {effect_name} (ID: {scene_id}) with brightness: {brightness}")
+                _LOGGER.info(f"[LIGHT_ON] Setting scene {effect_name} (ID: {scene_id}) with brightness: {brightness}")
                 await self._dev.set_scene(scene_id, brightness=brightness)
                 # Update state
                 self._brightness = brightness
+                _LOGGER.debug("[LIGHT_ON] ✅ Effect set successfully")
                 return
 
     async def async_turn_off(self, **kwargs: int) -> None:
         """Turn the light off."""
+        _LOGGER.info(f"[LIGHT_OFF] 🌙 Turning off {self.name}")
 
         await self._dev.turn_off()
         self._is_on = False
+        _LOGGER.debug("[LIGHT_OFF] ✅ Light turned off")
