@@ -1,0 +1,14 @@
+# Exclude development files from archives
+.github export-ignore
+.gitignore export-ignore
+.gitattributes export-ignore
+fehler.txt export-ignore
+*.zip export-ignore
+
+# Ensure consistent line endings
+* text=auto
+*.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf

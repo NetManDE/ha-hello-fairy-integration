@@ -1,0 +1,41 @@
+name: Create Release Asset
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get release version
+        id: version
+        run: |
+          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          echo "version_number=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Create integration ZIP
+        run: |
+          cd custom_components
+          zip -r ../hellofairy.zip hellofairy/
+          cd ..
+
+      - name: Upload ZIP to release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: hellofairy.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "✅ Release ${{ steps.version.outputs.version }} created successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📦 Asset: hellofairy.zip" >> $GITHUB_STEP_SUMMARY
+          echo "📥 Download: https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version }}/hellofairy.zip" >> $GITHUB_STEP_SUMMARY

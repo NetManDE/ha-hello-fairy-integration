@@ -12,3 +12,12 @@ tts
 .storage
 *.pyc
 .HA_VERSION
+
+# Development
+fehler.txt
+*.zip
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
